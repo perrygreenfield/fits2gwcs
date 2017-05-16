@@ -77,8 +77,17 @@ def convert_wcs(fitswcs):
         sipb = Polynomial2D(fsip.b_order)
         assign_coefficients(sipa, fsip.a)
         assign_coefficients(sipb, fsip.b)
-        #return sipa, sipb
+        # now the inverse, if it exists
+        if fsip.ap_order and fsip.bp_order:
+            sipap = Polynomial2D(fsip.ap_order)
+            sipbp = Polynomial2D(fsip.bp_order)
+            assign_coefficients(sipap, fsip.ap)
+            assign_coefficients(sipbp, fsip.bp)
+        else:
+            sipap = None
         siptrans = Identity(2) + (Mapping((0, 1, 0, 1)) | (sipa & sipb))
+        if sipap:
+            siptrans.inverse = Identity(2) + (Mapping((0, 1, 0, 1)) | (sipap & sipbp))
     # construct transformation
     if fitswcs.wcs.has_cd():
         trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
@@ -87,19 +96,18 @@ def convert_wcs(fitswcs):
                   rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     elif fitswcs.wcs.has_pc():
         trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
-        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.pc) *
-                 (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1]))|
+        pcmatrix = np.array(fitswcs.wcs.cdelt) * fitswcs.wcs.pc
+        trans2 = (projections.AffineTransformation2D(pcmatrix) |
                   projection_dict[tptype] |
                   rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     else:
         cdelt = fitswcs.wcs.cdelt
         crota2 = fitswcs.wcs.crota[1] * np.pi / 180 # unware of any crota1 case
         pscale_ratio = cdelt[1] / cdelt[0]
-        pcmatrix = np.array([[np.cos(crota2), -pscale_ratio * np.sin(crota2)],
-                             [np.sin(crota2) / pscale_ratio, np.cos(crota2)]])
+        pcmatrix = np.array([[np.cos(crota2)*cdelt[0], -np.sin(crota2)*cdelt[1]],
+                             [np.sin(crota2)*cdelt[0], np.cos(crota2)*cdelt[1]]])
         trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
-        trans2 = (projections.AffineTransformation2D(pcmatrix) * 
-                 (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1])) |
+        trans2 = (projections.AffineTransformation2D(pcmatrix) | 
                  projection_dict[tptype] | 
                  rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     if fsip:

@@ -38,4 +38,8 @@ def test_compare(filename):
     oldx, oldy = oldwcs.all_pix2world(x, y, 1)
     newx, newy = newwcs(x, y)
     assert np.allclose(oldx, newx, atol=1.e-13, rtol=1.e-13)
-    assert np.allclose(oldx, newx, atol=1.e-13, rtol=1.e-13)
+    assert np.allclose(oldy, newy, atol=1.e-13, rtol=1.e-13)
+    newxrt, newyrt = newwcs.invert(newx, newy)
+    assert np.allclose(x, newxrt, atol=1.e-9, rtol=1.e10)
+    assert np.allclose(y, newyrt, atol=1.e-9, rtol=1.e10)
+ 
