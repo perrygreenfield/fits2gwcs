@@ -1,4 +1,7 @@
-from __future__ import print_function, division
+# Licensed under a 3-clause BSD style license - see LICENSE.rst
+# -*- coding: utf-8 -*-
+
+from __future__ import absolute_import, division, unicode_literals, print_function
 
 '''
 This module contains prototype code to convert FITS WCS representations into
@@ -6,7 +9,6 @@ GWCS equivalent representations.
 '''
 
 import numpy as np
-from astropy import wcs
 from astropy import units as u
 from astropy import coordinates as coord
 import astropy.modeling.rotations as rotations
@@ -14,9 +16,9 @@ import astropy.modeling.projections as projections
 from astropy.modeling.mappings import Identity, Mapping
 from astropy.modeling.functional_models import Shift, Const1D
 from astropy.modeling.polynomial import Polynomial2D
-import gwcs 
 from gwcs import wcs as ggwcs
 from gwcs import coordinate_frames as cf
+
 
 def assign_coefficients(poly2d, coeff):
     '''
@@ -33,7 +35,8 @@ def assign_coefficients(poly2d, coeff):
     indices = [item[1:].split('_') for item in cnames]
     indices1 = [int(item[0]) for item in indices]
     indices2 = [int(item[1]) for item in indices]
-    poly2d.parameters = coeff[indices1, indices2] 
+    poly2d.parameters = coeff[indices1, indices2]
+
 
 def convert_wcs(fitswcs):
     '''
@@ -67,7 +70,6 @@ def convert_wcs(fitswcs):
     if fitswcs.cpdis1 or fitswcs.cpdis1: ### error here
         raise ValueError("currently doesn't support distortion")
 
-
     # Check for SIP correction
     fsip = fitswcs.sip
     if fsip:
@@ -80,21 +82,21 @@ def convert_wcs(fitswcs):
     # construct transformation
     if fitswcs.wcs.has_cd():
         trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
-        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.cd) | 
-                 projection_dict[tptype] | 
-                 rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
+        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.cd) |
+                  projection_dict[tptype] |
+                  rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     elif fitswcs.wcs.has_pc():
         trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
-        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.pc) * 
+        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.pc) *
                  (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1]))|
-                 projection_dict[tptype] | 
-                 rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
+                  projection_dict[tptype] |
+                  rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     else:
         cdelt = fitswcs.wcs.cdelt
-        crota2 = fitswcs.wcs.crota[1]*np.pi/180 # unware of any crota1 case
-        pscale_ratio = cdelt[1]/cdelt[0] 
-        pcmatrix = np.array([[np.cos(crota2), -pscale_ratio*np.sin(crota2)],
-                             [np.sin(crota2)/pscale_ratio, np.cos(crota2)]])
+        crota2 = fitswcs.wcs.crota[1] * np.pi / 180 # unware of any crota1 case
+        pscale_ratio = cdelt[1] / cdelt[0]
+        pcmatrix = np.array([[np.cos(crota2), -pscale_ratio * np.sin(crota2)],
+                             [np.sin(crota2) / pscale_ratio, np.cos(crota2)]])
         trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
         trans2 = (projections.AffineTransformation2D(pcmatrix) * 
                  (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1])) |
@@ -114,7 +116,7 @@ def convert_wcs(fitswcs):
                                           name=fitswcs.wcs.radesys.lower())
     else:
         sky_frame = '' # or None?
-   
+
     wcsobj = ggwcs.WCS(forward_transform=trans, input_frame=detector_frame,
-                     output_frame=sky_frame)
+                       output_frame=sky_frame)
     return wcsobj
