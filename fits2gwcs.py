@@ -67,7 +67,7 @@ def convert_wcs(fitswcs):
         if ptype not in ['TAN', 'SIN']:
             raise ValueError("currently only supports TAN and SIN projections")
         tptype = ptype # temporary since this part is only for celestial coordinates
-    if fitswcs.cpdis1 or fitswcs.cpdis1: ### error here
+    if fitswcs.cpdis1 or fitswcs.cpdis2: ### error here
         raise ValueError("currently doesn't support distortion")
 
     # Check for SIP correction
