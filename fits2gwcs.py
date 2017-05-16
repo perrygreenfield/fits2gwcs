@@ -13,9 +13,27 @@ import astropy.modeling.rotations as rotations
 import astropy.modeling.projections as projections
 from astropy.modeling.mappings import Identity, Mapping
 from astropy.modeling.functional_models import Shift, Const1D
-import gwcs
+from astropy.modeling.polynomial import Polynomial2D
+import gwcs 
 from gwcs import wcs as ggwcs
 from gwcs import coordinate_frames as cf
+
+def assign_coefficients(poly2d, coeff):
+    '''
+    Given coefficients in a nxn array, map them to the relevant parameters
+    in a 2d polynomial model
+    '''
+    # Check that orders are consistent
+    coeff_degree = coeff.shape[1]-1
+    poly_degree = poly2d.degree
+    if coeff_degree != poly_degree:
+        raise ValueError("shape of coefficient array inconsistent with polynomial model")
+    # parse the poly model coeff names
+    cnames = poly2d.param_names
+    indices = [item[1:].split('_') for item in cnames]
+    indices1 = [int(item[0]) for item in indices]
+    indices2 = [int(item[1]) for item in indices]
+    poly2d.parameters = coeff[indices1, indices2] 
 
 def convert_wcs(fitswcs):
     '''
@@ -29,28 +47,47 @@ def convert_wcs(fitswcs):
         'ICRS': coord.ICRS,
         'FK5': coord.FK5,
         'FK4': coord.FK4,
-        }
+    }
+    projection_dict = {
+        'TAN': projections.Pix2Sky_TAN(),
+        'SIN': projections.Pix2Sky_SIN()
+    }
     fctypes = fitswcs.wcs.ctype
     fcrval = fitswcs.wcs.crval
     fcrpix = fitswcs.wcs.crpix
     if fitswcs.naxis != 2:
         raise ValueError("currently only handles 2d images")
-    for ctype in fctypes:
-        if ctype not in ['RA---TAN', 'DEC--TAN', 'HPLN-TAN', 'HPLT-TAN']:
-            raise ValueError("currently only supports RA,DEC tangent projections (no SIP)")
-    if fitswcs.cpdis1 or fitswcs.cpdis1:
-        raise ValueError("currently doesn't support distortion")    
+    print(fctypes)
+    ptypes = [ct[5:8] for ct in fctypes]
+    for ptype in ptypes:
+        print(ptype)
+        if ptype not in ['TAN', 'SIN']:
+            raise ValueError("currently only supports TAN and SIN projections")
+        tptype = ptype # temporary since this part is only for celestial coordinates
+    if fitswcs.cpdis1 or fitswcs.cpdis1: ### error here
+        raise ValueError("currently doesn't support distortion")
+
+
+    # Check for SIP correction
+    fsip = fitswcs.sip
+    if fsip:
+        sipa = Polynomial2D(fsip.a_order)
+        sipb = Polynomial2D(fsip.b_order)
+        assign_coefficients(sipa, fsip.a)
+        assign_coefficients(sipb, fsip.b)
+        #return sipa, sipb
+        siptrans = Identity(2) + (Mapping((0, 1, 0, 1)) | (sipa & sipb))
     # construct transformation
     if fitswcs.wcs.has_cd():
-        trans = ((Shift(-fcrpix[0]) & Shift(-fcrpix[1])) | 
-                 projections.AffineTransformation2D(fitswcs.wcs.cd) | 
-                 projections.Pix2Sky_TAN() | 
+        trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
+        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.cd) | 
+                 projection_dict[tptype] | 
                  rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     elif fitswcs.wcs.has_pc():
-        trans = ((Shift(-fcrpix[0]) & Shift(-fcrpix[1])) | 
-                 (projections.AffineTransformation2D(fitswcs.wcs.pc) * 
-                 (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1])))|
-                 projections.Pix2Sky_TAN() | 
+        trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
+        trans2 = (projections.AffineTransformation2D(fitswcs.wcs.pc) * 
+                 (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1]))|
+                 projection_dict[tptype] | 
                  rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
     else:
         cdelt = fitswcs.wcs.cdelt
@@ -58,11 +95,15 @@ def convert_wcs(fitswcs):
         pscale_ratio = cdelt[1]/cdelt[0] 
         pcmatrix = np.array([[np.cos(crota2), -pscale_ratio*np.sin(crota2)],
                              [np.sin(crota2)/pscale_ratio, np.cos(crota2)]])
-        trans = ((Shift(-fcrpix[0]) & Shift(-fcrpix[1])) | 
-                 (projections.AffineTransformation2D(pcmatrix) * 
-                 (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1])))|
-                 projections.Pix2Sky_TAN() | 
+        trans1 = (Shift(-fcrpix[0]) & Shift(-fcrpix[1]))
+        trans2 = (projections.AffineTransformation2D(pcmatrix) * 
+                 (Const1D(fitswcs.wcs.cdelt[0]) & Const1D(fitswcs.wcs.cdelt[1])) |
+                 projection_dict[tptype] | 
                  rotations.RotateNative2Celestial(fcrval[0], fcrval[1], 180.))
+    if fsip:
+        trans = trans1 | siptrans | trans2
+    else:
+        trans = trans1 | trans2
     detector_frame = cf.Frame2D(name="detector", axes_names=('x', 'y'),
                                 unit=(u.pix, u.pix))
     # Now see if a standard frame is referenced.
